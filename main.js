@@ -161,7 +161,6 @@ ipcMain.on("notify", (event, { title, body }) => {
       body: body || "",
     });
 
-    // Open/focus main window when notification is clicked
     notification.on("click", () => {
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore();
