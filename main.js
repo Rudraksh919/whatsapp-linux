@@ -73,6 +73,21 @@ function createWindow() {
   });
 }
 
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit(); // Quit if another instance is already running
+} else {
+  app.on('second-instance', () => {
+    // Someone tried to start a second instance, just show the main window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
 app.on("ready", () => {
   // Tray
   const iconPath = path.join(__dirname, "assets", "icon.png");
@@ -84,11 +99,21 @@ app.on("ready", () => {
   }
   tray = new Tray(trayImg);
   const contextMenu = Menu.buildFromTemplate([
-    { label: "Show", click: () => mainWindow && mainWindow.show() },
-    { label: "Quit", click: () => app.quit() },
+    { 
+      label: "Show", 
+      click: () => mainWindow && mainWindow.show() 
+    },
+    { 
+      label: "Quit", 
+      click: () => {
+        app.isQuiting = true;  // tell the close handler to allow quitting
+        app.quit();
+      } 
+    },
   ]);
   tray.setToolTip("WhatsApp Web");
   tray.setContextMenu(contextMenu);
+
 
   createWindow();
 
@@ -131,9 +156,20 @@ app.on("window-all-closed", () => {
 // Native notifications
 ipcMain.on("notify", (event, { title, body }) => {
   if (Notification.isSupported()) {
-    new Notification({
+    const notification = new Notification({
       title: title || "WhatsApp",
       body: body || "",
-    }).show();
+    });
+
+    // Open/focus main window when notification is clicked
+    notification.on("click", () => {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+
+    notification.show();
   }
 });
