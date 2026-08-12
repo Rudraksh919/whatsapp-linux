@@ -41,8 +41,13 @@ if (process.defaultApp) {
 }
 
 const WHATSAPP_URL = "https://web.whatsapp.com/";
+const WHATSAPP_ORIGIN = new URL(WHATSAPP_URL).origin;
+const TRAY_ICON_PATH = path.join(__dirname, "assets", "icon.png");
 let mainWindow = null;
 let tray = null;
+let trayImage = nativeImage.createEmpty();
+let unreadCount = 0;
+const activeDownloadPaths = new Set();
 
 // Disable GPU only on Linux (avoids MESA-LOADER errors on Nvidia).
 // On Windows the GPU is fine and disabling it can cause black-screen issues.
@@ -63,6 +68,27 @@ function getDownloadDir() {
     fs.mkdirSync(dir, { recursive: true });
   }
   return dir;
+}
+
+function openDownloadsFolder() {
+  shell.openPath(getDownloadDir()).then((errorMessage) => {
+    if (errorMessage) console.error("Failed to open Downloads folder:", errorMessage);
+  });
+}
+
+function getDownloadPath(downloadDir, filename) {
+  const safeFileName = path.basename(filename).replace(/[\\/]/g, "_") || "download";
+  const { name, ext } = path.parse(safeFileName);
+  let suffix = 0;
+  let filePath;
+
+  do {
+    const suffixText = suffix ? ` (${suffix})` : "";
+    filePath = path.join(downloadDir, `${name}${suffixText}${ext}`);
+    suffix += 1;
+  } while (fs.existsSync(filePath) || activeDownloadPaths.has(filePath));
+
+  return filePath;
 }
 
 // Bring the main window to the foreground, creating/un-hiding it as needed.
@@ -89,6 +115,51 @@ function escapeXml(s) {
     .replace(/'/g, "&apos;");
 }
 
+function isWhatsAppUrl(url) {
+  try {
+    return new URL(url).origin === WHATSAPP_ORIGIN;
+  } catch (e) {
+    return false;
+  }
+}
+
+function openExternalUrl(url) {
+  try {
+    const { protocol } = new URL(url);
+    if (protocol === "http:" || protocol === "https:") {
+      shell.openExternal(url);
+    }
+  } catch (e) {
+    // Ignore malformed URLs from remote content.
+  }
+}
+
+function createTrayImage() {
+  if (!unreadCount || trayImage.isEmpty()) return trayImage;
+
+  const badgeText = unreadCount > 9 ? "9+" : String(unreadCount);
+  const badgeSvg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">` +
+    `<image href="${trayImage.toDataURL()}" width="16" height="16"/>` +
+    `<circle cx="12" cy="4" r="4" fill="#e53935"/>` +
+    `<text x="12" y="6" fill="white" font-family="sans-serif" font-size="5" font-weight="bold" text-anchor="middle">${badgeText}</text>` +
+    `</svg>`;
+  return nativeImage.createFromDataURL(
+    `data:image/svg+xml;base64,${Buffer.from(badgeSvg).toString("base64")}`
+  );
+}
+
+function updateUnreadBadge(title) {
+  const match = /^\((\d+)\)/.exec(title);
+  unreadCount = match ? Number(match[1]) : 0;
+  if (!tray) return;
+
+  tray.setImage(createTrayImage());
+  tray.setToolTip(
+    unreadCount ? `WhatsApp Web (${unreadCount} unread)` : "WhatsApp Web"
+  );
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1100,
@@ -112,17 +183,21 @@ function createWindow() {
 
   mainWindow.loadURL(WHATSAPP_URL);
 
+  mainWindow.webContents.on("page-title-updated", (event, title) => {
+    updateUnreadBadge(title);
+  });
+
   // Open any popup (new window) link in the default browser instead of in-app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalUrl(url);
     return { action: "deny" };
   });
 
   // Keep WhatsApp navigation in-app, send every other link to the browser.
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (!url.startsWith(WHATSAPP_URL)) {
+    if (!isWhatsAppUrl(url)) {
       event.preventDefault();
-      shell.openExternal(url);
+      openExternalUrl(url);
     }
   });
 
@@ -175,6 +250,19 @@ function buildTrayMenu() {
         mainWindow.focus();
       },
     },
+    {
+      label: "Reload WhatsApp",
+      click: () => {
+        revealWindow();
+        mainWindow.webContents.reloadIgnoringCache();
+      },
+    },
+    {
+      label: "Open Downloads Folder",
+      click: () => {
+        openDownloadsFolder();
+      },
+    },
     { type: "separator" },
     {
       label: "Start on login",
@@ -197,17 +285,15 @@ function buildTrayMenu() {
 
 app.on("ready", () => {
   // Tray — load the app icon and resize it down for a crisp tray glyph.
-  const iconPath = path.join(__dirname, "assets", "icon.png");
-  let trayImg;
   try {
-    trayImg = nativeImage.createFromPath(iconPath);
-    if (!trayImg.isEmpty()) {
-      trayImg = trayImg.resize({ width: 16, height: 16 });
+    trayImage = nativeImage.createFromPath(TRAY_ICON_PATH);
+    if (!trayImage.isEmpty()) {
+      trayImage = trayImage.resize({ width: 16, height: 16 });
     }
   } catch (e) {
-    trayImg = nativeImage.createEmpty();
+    trayImage = nativeImage.createEmpty();
   }
-  tray = new Tray(trayImg);
+  tray = new Tray(createTrayImage());
   tray.setToolTip("WhatsApp Web");
   tray.setContextMenu(buildTrayMenu());
 
@@ -234,17 +320,12 @@ app.on("ready", () => {
   // Save every download into the user's Downloads folder.
   const downloadDir = getDownloadDir();
   session.defaultSession.on("will-download", (event, item) => {
-    const filePath = path.join(downloadDir, item.getFilename());
+    const filePath = getDownloadPath(downloadDir, item.getFilename());
 
-    // If the file already exists, just open it instead of re-downloading.
-    if (fs.existsSync(filePath)) {
-      event.preventDefault();
-      shell.openPath(filePath);
-      return;
-    }
-
+    activeDownloadPaths.add(filePath);
     item.setSavePath(filePath);
     item.once("done", (e, state) => {
+      activeDownloadPaths.delete(filePath);
       if (state === "completed") {
         console.log("Download finished:", filePath);
       } else {
@@ -261,6 +342,12 @@ app.on("activate", () => {
 
 app.on("window-all-closed", () => {
   // Keep running in the tray on all platforms until "Quit" is chosen.
+});
+
+ipcMain.on("open-downloads", (event) => {
+  if (mainWindow && event.sender === mainWindow.webContents) {
+    openDownloadsFolder();
+  }
 });
 
 // Native notifications forwarded from the renderer/preload.

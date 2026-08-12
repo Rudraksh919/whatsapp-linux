@@ -105,16 +105,19 @@ window.addEventListener('load', () => {
   style.innerHTML = `
     /* Target the main chat list */
     body.privacy-mode #pane-side [role="row"]:not(:hover):has([data-testid="cell-frame-container"]):not(:has([aria-selected="true"])):not(:has([aria-current="page"])),
+    body.privacy-unfocused #pane-side [role="row"]:has([data-testid="cell-frame-container"]):not(:has([aria-selected="true"])):not(:has([aria-current="page"])),
     
     /* Target dynamically tagged chat rows in side drawers (Archived, Search, etc.) */
-    body.privacy-mode .is-chat-row:not(:hover):has([data-testid="cell-frame-container"]):not(:has([aria-selected="true"])):not(:has([aria-current="page"])) {
+    body.privacy-mode .is-chat-row:not(:hover):has([data-testid="cell-frame-container"]):not(:has([aria-selected="true"])):not(:has([aria-current="page"])),
+    body.privacy-unfocused .is-chat-row:has([data-testid="cell-frame-container"]):not(:has([aria-selected="true"])):not(:has([aria-current="page"])) {
         filter: blur(6px) !important;
         opacity: 0.7 !important;
         transition: filter 0.2s ease, opacity 0.2s ease !important;
     }
 
-    /* Fixed positioning toggle button - isolated from React's DOM updates */
-    #privacy-toggle-btn {
+    /* Fixed controls - isolated from React's DOM updates */
+    #privacy-toggle-btn,
+    #downloads-folder-btn {
         position: fixed !important;
         bottom: 120px !important;
         /* left is calculated dynamically in JS to match exact alignment */
@@ -132,10 +135,12 @@ window.addEventListener('load', () => {
         width: 40px;
         height: 40px;
     }
-    #privacy-toggle-btn:hover {
+    #privacy-toggle-btn:hover,
+    #downloads-folder-btn:hover {
         background: rgba(255, 255, 255, 0.08);
     }
-    #privacy-toggle-btn svg {
+    #privacy-toggle-btn svg,
+    #downloads-folder-btn svg {
         width: 24px;
         height: 24px;
         fill: #aebac1;
@@ -149,6 +154,13 @@ window.addEventListener('load', () => {
     document.body.classList.add('privacy-mode');
   }
 
+  window.addEventListener('blur', () => {
+    document.body.classList.add('privacy-unfocused');
+  });
+  window.addEventListener('focus', () => {
+    document.body.classList.remove('privacy-unfocused');
+  });
+
   const observer = new MutationObserver(() => {
     // Check if the main WhatsApp UI has actually loaded (avoids showing on loading screen)
     const settingsBtn = document.querySelector('[aria-label="Settings"]') || 
@@ -158,6 +170,8 @@ window.addEventListener('load', () => {
     if (!settingsBtn && !chatList) {
         const existingBtn = document.getElementById('privacy-toggle-btn');
         if (existingBtn) existingBtn.style.display = 'none';
+      const existingDownloadsBtn = document.getElementById('downloads-folder-btn');
+      if (existingDownloadsBtn) existingDownloadsBtn.style.display = 'none';
         return;
     }
 
@@ -191,9 +205,23 @@ window.addEventListener('load', () => {
       // Append to body directly to avoid React wiping it and causing an infinite loop
       document.body.appendChild(btn);
     }
+
+    let downloadsBtn = document.getElementById('downloads-folder-btn');
+    if (!downloadsBtn) {
+      downloadsBtn = document.createElement('button');
+      downloadsBtn.id = 'downloads-folder-btn';
+      downloadsBtn.title = 'Open Downloads Folder';
+      downloadsBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2zm10 14H4V8h16v10zm-8-2 4-4h-3V9h-2v3H8l4 4z"/></svg>';
+      downloadsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (e.isTrusted) ipcRenderer.send('open-downloads');
+      });
+      document.body.appendChild(downloadsBtn);
+    }
     
-    // Ensure button is visible (in case it was hidden during loading)
+    // Ensure controls are visible (in case they were hidden during loading)
     btn.style.display = '';
+    downloadsBtn.style.display = '';
 
     // Dynamically tag rows in side drawers (Archived, Search) so they blur, 
     // while explicitly ignoring Settings menus.
@@ -246,12 +274,17 @@ window.addEventListener('load', () => {
             // Position our button above the Settings button
             // Adjusted downwards by ~18px (approx 0.5cm) as requested
             const distanceFromBottom = window.innerHeight - rect.top;
-            btn.style.setProperty('bottom', (distanceFromBottom + gap - 18) + 'px', 'important');
+            const privacyBottom = distanceFromBottom + gap - 18;
+            btn.style.setProperty('bottom', privacyBottom + 'px', 'important');
+            downloadsBtn.style.setProperty('left', (centerX - 20) + 'px', 'important');
+            downloadsBtn.style.setProperty('bottom', (privacyBottom + 48) + 'px', 'important');
         }
     } else {
         // Fallback default alignment
         btn.style.setProperty('left', '12px', 'important');
         btn.style.setProperty('bottom', '100px', 'important');
+          downloadsBtn.style.setProperty('left', '12px', 'important');
+          downloadsBtn.style.setProperty('bottom', '148px', 'important');
     }
   });
 
