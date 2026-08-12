@@ -105,11 +105,9 @@ window.addEventListener('load', () => {
   style.innerHTML = `
     /* Target the main chat list */
     body.privacy-mode #pane-side [role="row"]:not(:hover):has([data-testid="cell-frame-container"]):not(:has([aria-selected="true"])):not(:has([aria-current="page"])),
-    body.privacy-unfocused #pane-side [role="row"]:has([data-testid="cell-frame-container"]):not(:has([aria-selected="true"])):not(:has([aria-current="page"])),
     
     /* Target dynamically tagged chat rows in side drawers (Archived, Search, etc.) */
-    body.privacy-mode .is-chat-row:not(:hover):has([data-testid="cell-frame-container"]):not(:has([aria-selected="true"])):not(:has([aria-current="page"])),
-    body.privacy-unfocused .is-chat-row:has([data-testid="cell-frame-container"]):not(:has([aria-selected="true"])):not(:has([aria-current="page"])) {
+    body.privacy-mode .is-chat-row:not(:hover):has([data-testid="cell-frame-container"]):not(:has([aria-selected="true"])):not(:has([aria-current="page"])) {
         filter: blur(6px) !important;
         opacity: 0.7 !important;
         transition: filter 0.2s ease, opacity 0.2s ease !important;
@@ -154,14 +152,7 @@ window.addEventListener('load', () => {
     document.body.classList.add('privacy-mode');
   }
 
-  window.addEventListener('blur', () => {
-    document.body.classList.add('privacy-unfocused');
-  });
-  window.addEventListener('focus', () => {
-    document.body.classList.remove('privacy-unfocused');
-  });
-
-  const observer = new MutationObserver(() => {
+  function updateControls() {
     // Check if the main WhatsApp UI has actually loaded (avoids showing on loading screen)
     const settingsBtn = document.querySelector('[aria-label="Settings"]') || 
                         document.querySelector('[data-testid="settings-outline"]');
@@ -286,7 +277,20 @@ window.addEventListener('load', () => {
           downloadsBtn.style.setProperty('left', '12px', 'important');
           downloadsBtn.style.setProperty('bottom', '148px', 'important');
     }
-  });
+  }
+
+  let updateTimer = null;
+  function scheduleControlUpdate() {
+    if (updateTimer) return;
+    updateTimer = window.setTimeout(() => {
+      updateTimer = null;
+      updateControls();
+    }, 150);
+  }
+
+  const observer = new MutationObserver(scheduleControlUpdate);
 
   observer.observe(document.body, { childList: true, subtree: true });
+  window.addEventListener('resize', scheduleControlUpdate);
+  scheduleControlUpdate();
 });
