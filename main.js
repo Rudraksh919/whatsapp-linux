@@ -134,27 +134,11 @@ function openExternalUrl(url) {
   }
 }
 
-function createTrayImage() {
-  if (!unreadCount || trayImage.isEmpty()) return trayImage;
-
-  const badgeText = unreadCount > 9 ? "9+" : String(unreadCount);
-  const badgeSvg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">` +
-    `<image href="${trayImage.toDataURL()}" width="16" height="16"/>` +
-    `<circle cx="12" cy="4" r="4" fill="#e53935"/>` +
-    `<text x="12" y="6" fill="white" font-family="sans-serif" font-size="5" font-weight="bold" text-anchor="middle">${badgeText}</text>` +
-    `</svg>`;
-  return nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from(badgeSvg).toString("base64")}`
-  );
-}
-
 function updateUnreadBadge(title) {
   const match = /^\((\d+)\)/.exec(title);
   unreadCount = match ? Number(match[1]) : 0;
   if (!tray) return;
 
-  tray.setImage(createTrayImage());
   tray.setToolTip(
     unreadCount ? `WhatsApp Web (${unreadCount} unread)` : "WhatsApp Web"
   );
@@ -228,19 +212,6 @@ if (!gotTheLock) {
   });
 }
 
-function isAutoLaunchEnabled() {
-  return app.getLoginItemSettings().openAtLogin;
-}
-
-function setAutoLaunch(enabled) {
-  app.setLoginItemSettings({
-    openAtLogin: enabled,
-    // Start hidden in the tray on login rather than popping the window open.
-    openAsHidden: true,
-    args: ["--hidden"],
-  });
-}
-
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     {
@@ -255,22 +226,13 @@ function buildTrayMenu() {
       label: "Reload WhatsApp",
       click: () => {
         revealWindow();
-        mainWindow.webContents.reloadIgnoringCache();
+        mainWindow.loadURL(WHATSAPP_URL);
       },
     },
     {
       label: "Open Downloads Folder",
       click: () => {
         openDownloadsFolder();
-      },
-    },
-    { type: "separator" },
-    {
-      label: "Start on login",
-      type: "checkbox",
-      checked: isAutoLaunchEnabled(),
-      click: (item) => {
-        setAutoLaunch(item.checked);
       },
     },
     { type: "separator" },
@@ -285,6 +247,10 @@ function buildTrayMenu() {
 }
 
 app.on("ready", () => {
+  if (isWindows || process.platform === "darwin") {
+    app.setLoginItemSettings({ openAtLogin: false });
+  }
+
   // Tray — load the app icon and resize it down for a crisp tray glyph.
   try {
     trayImage = nativeImage.createFromPath(TRAY_ICON_PATH);
@@ -294,7 +260,7 @@ app.on("ready", () => {
   } catch (e) {
     trayImage = nativeImage.createEmpty();
   }
-  tray = new Tray(createTrayImage());
+  tray = new Tray(trayImage);
   tray.setToolTip("WhatsApp Web");
   tray.setContextMenu(buildTrayMenu());
 
@@ -309,14 +275,6 @@ app.on("ready", () => {
   });
 
   createWindow();
-
-  // If launched at login (--hidden), start minimized to the tray.
-  const launchedHidden =
-    process.argv.includes("--hidden") ||
-    app.getLoginItemSettings().wasOpenedAsHidden;
-  if (launchedHidden && mainWindow) {
-    mainWindow.once("ready-to-show", () => mainWindow.hide());
-  }
 
   // Save every download into the user's Downloads folder.
   const downloadDir = getDownloadDir();

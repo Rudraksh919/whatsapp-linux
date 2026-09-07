@@ -8,7 +8,6 @@ WhatsApp Web wrapper built with Electron. Runs on **Windows** and **Linux**.
 - System tray icon (single-click to open, right-click menu)
 - Close-to-tray (app keeps running in the background)
 - Native desktop notifications (click to focus the chat)
-- "Start on login" toggle (starts hidden in the tray)
 - Downloads saved to `Downloads/`
 - External links open in your default browser
 - Single-instance (re-launching focuses the existing window)
