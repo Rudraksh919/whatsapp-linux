@@ -134,11 +134,46 @@ function openExternalUrl(url) {
   }
 }
 
+function createUnreadBadgeImage() {
+  const badgeText = unreadCount > 9 ? "9+" : String(unreadCount);
+  const badgeSvg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">` +
+    `<circle cx="8" cy="8" r="7" fill="#e53935"/>` +
+    `<text x="8" y="10" fill="white" font-family="sans-serif" font-size="7" font-weight="bold" text-anchor="middle">${badgeText}</text>` +
+    `</svg>`;
+  return nativeImage.createFromDataURL(
+    `data:image/svg+xml;base64,${Buffer.from(badgeSvg).toString("base64")}`
+  );
+}
+
+function createTrayImage() {
+  if (!unreadCount) return trayImage;
+
+  const badgeText = unreadCount > 9 ? "9+" : String(unreadCount);
+  const traySvg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">` +
+    `<circle cx="8" cy="8" r="7" fill="#25d366"/>` +
+    `<path d="M5 4.8c.3-.3.8-.3 1.1 0l1.1 1.1c.3.3.3.7.1 1l-.6.8c.5 1 1.3 1.8 2.3 2.3l.8-.6c.3-.2.7-.2 1 .1l1.1 1.1c.3.3.3.8 0 1.1l-.5.5c-.5.5-1.2.7-1.9.5-2.4-.7-4.7-3-5.4-5.4-.2-.7 0-1.4.5-1.9z" fill="white"/>` +
+    `<circle cx="13" cy="3" r="3" fill="#e53935"/>` +
+    `<text x="13" y="4.3" fill="white" font-family="sans-serif" font-size="3.8" font-weight="bold" text-anchor="middle">${badgeText}</text>` +
+    `</svg>`;
+  return nativeImage.createFromDataURL(
+    `data:image/svg+xml;base64,${Buffer.from(traySvg).toString("base64")}`
+  );
+}
+
 function updateUnreadBadge(title) {
   const match = /^\((\d+)\)/.exec(title);
   unreadCount = match ? Number(match[1]) : 0;
   if (!tray) return;
 
+  tray.setImage(createTrayImage());
+  if (isWindows && mainWindow) {
+    mainWindow.setOverlayIcon(
+      unreadCount ? createUnreadBadgeImage() : null,
+      unreadCount ? `${unreadCount} unread messages` : ""
+    );
+  }
   tray.setToolTip(
     unreadCount ? `WhatsApp Web (${unreadCount} unread)` : "WhatsApp Web"
   );
